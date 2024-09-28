@@ -173,6 +173,18 @@ func (d Device) RunShellCommandWithBytes(cmd string, args ...string) ([]byte, er
 	return raw, err
 }
 
+// 增加了控制超时的方法
+func (d Device) RunShellCommandWithTimeout(readTimeout time.Duration, cmd string, args ...string) (string, error) {
+	if len(args) > 0 {
+		cmd = fmt.Sprintf("%s %s", cmd, strings.Join(args, " "))
+	}
+	if strings.TrimSpace(cmd) == "" {
+		return `guixz错误`, errors.New("adb shell: command cannot be empty")
+	}
+	raw, err := d.executeCommandWithTimeout(readTimeout, fmt.Sprintf("shell:%s", cmd))
+	return string(raw), err
+}
+
 func (d Device) EnableAdbOverTCP(port ...int) (err error) {
 	if len(port) == 0 {
 		port = []int{AdbDaemonPort}
@@ -193,6 +205,17 @@ func (d Device) createDeviceTransport() (tp transport, err error) {
 	err = tp.VerifyResponse()
 	return
 }
+func (d Device) createDeviceTransportWithTimeout(readTimeout time.Duration) (tp transport, err error) {
+	if tp, err = newTransport(fmt.Sprintf("%s:%d", d.adbClient.host, d.adbClient.port), readTimeout); err != nil {
+		return transport{}, err
+	}
+
+	if err = tp.Send(fmt.Sprintf("host:transport:%s", d.serial)); err != nil {
+		return transport{}, err
+	}
+	err = tp.VerifyResponse()
+	return
+}
 
 func (d Device) executeCommand(command string, onlyVerifyResponse ...bool) (raw []byte, err error) {
 	if len(onlyVerifyResponse) == 0 {
@@ -201,6 +224,34 @@ func (d Device) executeCommand(command string, onlyVerifyResponse ...bool) (raw 
 
 	var tp transport
 	if tp, err = d.createDeviceTransport(); err != nil {
+		return nil, err
+	}
+	defer func() { _ = tp.Close() }()
+
+	if err = tp.Send(command); err != nil {
+		return nil, err
+	}
+
+	if err = tp.VerifyResponse(); err != nil {
+		return nil, err
+	}
+
+	if onlyVerifyResponse[0] {
+		return
+	}
+
+	raw, err = tp.ReadBytesAll()
+	return
+}
+
+// 时间控制增加的新方法
+func (d Device) executeCommandWithTimeout(readTimeout time.Duration, command string, onlyVerifyResponse ...bool) (raw []byte, err error) {
+	if len(onlyVerifyResponse) == 0 {
+		onlyVerifyResponse = []bool{false}
+	}
+
+	var tp transport
+	if tp, err = d.createDeviceTransportWithTimeout(readTimeout); err != nil {
 		return nil, err
 	}
 	defer func() { _ = tp.Close() }()
