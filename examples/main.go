@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/electricbubble/gadb"
+	"github.com/cplasfwst/gadb"
 	"log"
 	"os"
 	"strings"
